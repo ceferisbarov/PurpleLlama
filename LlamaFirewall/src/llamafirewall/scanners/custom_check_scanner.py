@@ -34,7 +34,12 @@ class CustomCheckScanner(Scanner, Generic[OutputSchemaT]):
         scanner_name: str,
         system_prompt: str,
         output_schema: Type[OutputSchemaT],
-        model_name: str = "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        model=None,
+        tokenizer=None,
+        accelerator=None,
+        model_name: str | None = None,
+        backend: str = "huggingface",
+        quantization: str = "fp8",
         api_base_url: str = "https://api.together.xyz/v1",
         api_key_env_var: str = "TOGETHER_API_KEY",
         temperature: float = 0.0,
@@ -61,23 +66,23 @@ class CustomCheckScanner(Scanner, Generic[OutputSchemaT]):
         # Initialize the LLM client
         self.llm: LLMClient[OutputSchemaT] = LLMClient(
             model_name=model_name,
+            model=model,
+            tokenizer=tokenizer,
             api_base_url=api_base_url,
             api_key_env_var=api_key_env_var,
+            backend=backend,
+            quantization=quantization,
+            accelerator=accelerator,
         )
 
     async def _evaluate_with_llm(self, text: str) -> OutputSchemaT:
-        try:
-            response = await self.llm.call(
-                prompt=text,
-                system_prompt=self.system_prompt,
-                output_schema=self.output_schema,
-                temperature=self.temperature,
-            )
-            LOG.info(f"[LlamaFirewall] LLM-based scanner response: {response}")
-            return response
-        except Exception as e:
-            LOG.error(f"Error in LLM evaluation: {e}")
-            return self._get_default_error_response()
+        response = await self.llm.call(
+            prompt=text,
+            system_prompt=self.system_prompt,
+            output_schema=self.output_schema,
+            temperature=self.temperature,
+        )
+        return response
 
     @abstractmethod
     def _get_default_error_response(self) -> OutputSchemaT:

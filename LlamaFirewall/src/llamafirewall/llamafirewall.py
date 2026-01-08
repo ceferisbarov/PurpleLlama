@@ -44,7 +44,15 @@ def register_llamafirewall_scanner(
     return decorator
 
 
-def create_scanner(scanner_type: ScannerType | str) -> Scanner:
+def create_scanner(
+    scanner_type: ScannerType | str,
+    alignmentcheck_model,
+    alignmentcheck_tokenizer,
+    alignmentcheck_backend,
+    alignmentcheck_quantization,
+    alignmentcheck_model_name,
+    accelerator,
+) -> Scanner:
     if isinstance(scanner_type, str) and scanner_type in custom_scanner_registry:
         scanner_class = custom_scanner_registry[scanner_type]
         # pyre-ignore[20]: Registered class must be a subclass of Scanner, so it has a constructor with scanner_name as a parameter
@@ -67,7 +75,14 @@ def create_scanner(scanner_type: ScannerType | str) -> Scanner:
                 AlignmentCheckScanner,
             )
 
-            return AlignmentCheckScanner()
+            return AlignmentCheckScanner(
+                model=alignmentcheck_model,
+                tokenizer=alignmentcheck_tokenizer,
+                backend=alignmentcheck_backend,
+                quantization=alignmentcheck_quantization,
+                model_name=alignmentcheck_model_name,
+                accelerator=accelerator,
+            )
         elif scanner_type == ScannerType.PII_DETECTION:
             from .scanners.experimental.piicheck_scanner import PIICheckScanner
 
@@ -86,7 +101,16 @@ def create_scanner(scanner_type: ScannerType | str) -> Scanner:
 
 
 class LlamaFirewall:
-    def __init__(self, scanners: Configuration | None = None) -> None:
+    def __init__(
+        self,
+        model=None,
+        tokenizer=None,
+        backend=None,
+        quantization=None,
+        model_name=None,
+        accelerator=None,
+        scanners: Configuration | None = None,
+    ) -> None:
         # Default scanners for each Role
         default_scanners = {
             Role.TOOL: [ScannerType.CODE_SHIELD, ScannerType.PROMPT_GUARD],
@@ -97,6 +121,12 @@ class LlamaFirewall:
         }
         # Use provided scanners or default to all scanners
         self.scanners: Configuration = scanners or default_scanners
+        self.model = model
+        self.tokenizer = tokenizer
+        self.backend = backend
+        self.quantization = quantization
+        self.model_name = model_name
+        self.accelerator = accelerator
 
     @classmethod
     def from_usecase(cls, usecase: UseCase) -> Self:
@@ -115,7 +145,15 @@ class LlamaFirewall:
         decisions = {}
         last_reason = ""
         for scanner_type in scanners:
-            scanner_instance = create_scanner(scanner_type)
+            scanner_instance = create_scanner(
+                scanner_type,
+                self.model,
+                self.tokenizer,
+                self.backend,
+                self.quantization,
+                self.model_name,
+                self.accelerator,
+            )
             LOG.debug(
                 f"[LlamaFirewall] Scanning with {scanner_instance.name}, for the input {str(input.content)[:20]}"
             )
@@ -168,7 +206,9 @@ class LlamaFirewall:
         trace: Trace | None = None,
     ) -> ScanResult:
         for scanner_type in self.scanners.get(input.role, []):
-            scanner_instance = create_scanner(scanner_type)
+            scanner_instance = create_scanner(
+                scanner_type, self.model, self.tokenizer, self.backend, self.model_name
+            )
             scanner_result = await scanner_instance.scan(input, trace)
             if (
                 scanner_result.decision == ScanDecision.BLOCK
